@@ -4,23 +4,21 @@ Install plink2 to ./bin folder `PLINK v2.0.0-a.7LM 64-bit Intel (1 Sep 2025)`
 ```
 wget -O ./bin/plink2.zip https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_latest.zip && unzip -o ./bin/plink2.zip -d ./bin && chmod +x ./bin/plink2
 ```
-
+Download chain file for liftOver
+```
+wget -O data/hg19ToHg38.over.chain.gz http://hgdownload.cse.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+wget -O data/hg18ToHg38.over.chain.gz http://hgdownload.cse.edu/goldenPath/hg18/liftOver/hg18ToHg38.over.chain.gz
+wget -O data/hg38ToHg19.over.chain.gz http://hgdownload.cse.edu/goldenPath/hg38/liftOver/hg38ToHg19.over.chain.gz
+````
 Install modules to run the following scripts on cluster
 ```
 module load ucsc #for liftOver
 module load plink/1.9
 ```
 ## Required references
-* hg19ToHg38.over.chain.gz
-* hg18ToHg38.over.chain.gz
-* hg38ToHg19.over.chain.gz
-* hg38.fa.gz
-* hg38.fa.gz.fai
-* Qced 1kg plink binary + population labels (all_hg38_filtered_chrpos*)
+* hg38.fa.gz (fasta file) from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/)
 * AJ reference plink binary from [GSE23636](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE23636)
-
-
-\* biallelic snps on autosomes with a MAF > 0.01, geno > 0.95 and hwe > 1e-6. Also, pallindromes and long LD regions were excluded. ([Processing steps](https://github.com/hirotaka-i/1kg_ref/blob/main/main.ipynb))
+* 1000 genome phase 3 plink binary + population labels filtered to biallelic snps on autosomes with a MAF > 0.01, geno > 0.95 and hwe > 1e-6. Also, pallindromes and long LD regions were excluded. ([Processing steps](https://github.com/hirotaka-i/1kg_ref/blob/main/main.ipynb))
 
 ## EUR
 Start with REGARDS EUR genotyping data.    
@@ -119,6 +117,7 @@ Output figures are in `temp/AJ/pop_split_out`
 make a ref dataset for AJ/EUR+1kg/EUR
 ```
 python code/make_aj_1kg_list.py
+
 ./bin/plink2 --bfile temp/AJ/merge_ref_proj_out/merged_temp \
         --keep temp/AJ/aj_1kg_eur.list \
         --make-bed --threads 2 \
@@ -152,9 +151,10 @@ EUR-AJ         24
 Output figures are in `temp/EUR/pop_split_eur_out`
 ![EUR+AJ population split](temp/EUR/pop_split_eur_out/with_1kg_aj_mah_Whole_ancestry_PC1xPC2.png)
 
-
+==== NOT ON GITHUB ====
 * EUR list: `temp/EUR/pop_split_eur_out/with_1kg_mah_EUR.list`
 * EUR-nonAJ list: `temp/EUR/pop_split_eur_out/with_1kg_aj_mah_EUR-nonAJ.list`
+
 
 ---
 
