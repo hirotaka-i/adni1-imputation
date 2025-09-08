@@ -23,7 +23,9 @@ module load plink/1.9
 \* biallelic snps on autosomes with a MAF > 0.01, geno > 0.95 and hwe > 1e-6. Also, pallindromes and long LD regions were excluded. ([Processing steps](https://github.com/hirotaka-i/1kg_ref/blob/main/main.ipynb))
 
 ## EUR
-clean-up the noisy variants, align to hg38, standardize the variants IDs to chr:pos:ref:alt
+Start with REGARDS EUR genotyping data.    
+
+First, clean-up the noisy variants, align to hg38, standardize the variants IDs to chr:pos:ref:alt
 ```
 bash code/01_prepare_variants.sh \
         --bfile /data/CARD/AD/REGARDS/Genetics/old_files/REGARDS_EUR_Genotyped \
@@ -56,14 +58,22 @@ python code/03b_plot_pop_and_split.py \
         --split-method mahalanobis \
         --out-prefix temp/EUR/pop_split_out/with_1kg_mah
 ```
+```
+InfPop
+REF      2573
+EUR      1616
+AMR        68
+OTHER      11
+```
+
 Output figures are in `temp/EUR/pop_split_out`
 ![Whole population split](temp/EUR/pop_split_out/with_1kg_mah_Whole_group_PC1xPC2.png)
-
+![EUR population split](temp/EUR/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
 
 
 ## Try separating AJ
-
-### First merging AJ with 1kg
+GP2 style requires AJ separation from EUR. 
+### First, merging AJ with 1kg
 ```
 bash code/01_prepare_variants.sh \
         --bfile data/GSE23636 \
@@ -93,8 +103,18 @@ python code/03b_plot_pop_and_split.py \
         --split-method mahalanobis \
         --out-prefix temp/AJ/pop_split_out/with_1kg_mah
 ```
+```
+InfPop
+REF      2573
+EUR       352
+AMR        79
+OTHER      32
+```
+Some AJ participants were not-mapped to AJ cluster when merged with 1kg.
+
 Output figures are in `temp/AJ/pop_split_out`
 ![AJ population split in EUR](temp/AJ/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
+
 
 make a ref dataset for AJ/EUR+1kg/EUR
 ```
@@ -123,12 +143,20 @@ python code/03b_plot_pop_and_split.py \
         --eur-aj-sep \
         --out-prefix temp/EUR/pop_split_eur_out/with_1kg_aj_mah
 ```
+```
+InfPop
+EUR-nonAJ    1592
+REF           877
+EUR-AJ         24
+```
 Output figures are in `temp/EUR/pop_split_eur_out`
 ![EUR+AJ population split](temp/EUR/pop_split_eur_out/with_1kg_aj_mah_Whole_ancestry_PC1xPC2.png)
----
+
 
 * EUR list: `temp/EUR/pop_split_eur_out/with_1kg_mah_EUR.list`
 * EUR-nonAJ list: `temp/EUR/pop_split_eur_out/with_1kg_aj_mah_EUR-nonAJ.list`
+
+---
 
 # Preparation for Imputation server
 *Under construction*
