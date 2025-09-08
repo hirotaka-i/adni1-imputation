@@ -108,7 +108,7 @@ EUR       352
 AMR        79
 OTHER      32
 ```
-Some AJ participants were not-mapped to AJ cluster when merged with 1kg.
+Some AJ participants were not-mapped to EUA cluster when merged with 1kg.
 
 Output figures are in `temp/AJ/pop_split_out`
 ![AJ population split in EUR](temp/AJ/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
