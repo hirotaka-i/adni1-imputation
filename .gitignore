@@ -163,3 +163,4 @@ data/
 priv/
 temp/
 temp*
+bin/

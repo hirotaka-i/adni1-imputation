@@ -1,242 +1,138 @@
-# Introduction
+# REGARDS genetic QC and population splitting
 
-This repository provides a structured template for starting a new (one-person) analytical project. It is designed with the following priorities in mind:
-
-1. **Reproducibility**: Ensure that analyses are easily reproducible with a clear folder structure and environmental setup guidelines.
-2. **Security**: Prevent sensitive information, such as data, API keys, and passwords, from being uploaded to GitHub.
-
-The following sections require git to be installed on your machine. If you have not set up the git, please follow the instructions [here](https://docs.github.com/en/get-started/quickstart/set-up-git)
-
-## Install and Set Up the GitHub Connection
-
-To create a new repository based on this template, follow the steps below.
-
-#### Notes:
-1. Replace `YOUR_PROJECT_NAME` with the desired name of your project.
-2. Replace `YOUR_GITHUB_REPO_URL` with the URL of your newly created GitHub repository.
-
-
-### Step 1: Clone the Template Repository
-
-The following commands will clone the template repository, rename it to your project name, and remove the existing Git history.
-
-#### For macOS/Linux (Bash):
-```bash
-# Clone the template repository
-git clone https://github.com/hirotaka-i/new_analysis.git 
-
-# Rename the folder. Substitute YOUR_PROJECT_NAME with your desired project name
-mv new_analysis YOUR_PROJECT_NAME 
-
-# Change directory to the new project folder
-cd YOUR_PROJECT_NAME
-
-# Remove the existing Git history
-rm -rf .git
+Install plink2 to ./bin folder `PLINK v2.0.0-a.7LM 64-bit Intel (1 Sep 2025)`
+```
+wget -O ./bin/plink2.zip https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_latest.zip && unzip -o ./bin/plink2.zip -d ./bin && chmod +x ./bin/plink2
 ```
 
-#### For Windows PowerShell:
-```powershell
-# Clone the template repository
-git clone https://github.com/hirotaka-i/new_analysis.git 
-
-# Rename the folder. Substitute YOUR_PROJECT_NAME with your desired project name
-Rename-Item -Path "new_analysis" -NewName "YOUR_PROJECT_NAME" 
-
-# Change directory to the new project folder
-Set-Location "YOUR_PROJECT_NAME"
-
-# Remove the existing Git history
-Remove-Item -Recurse -Force ".git"
+Install modules to run the following scripts on cluster
 ```
+module load ucsc #for liftOver
+module load plink/1.9
+```
+## Required references
+* hg19ToHg38.over.chain.gz
+* hg18ToHg38.over.chain.gz
+* hg38ToHg19.over.chain.gz
+* hg38.fa.gz
+* hg38.fa.gz.fai
+* Qced 1kg plink binary + population labels (all_hg38_filtered_chrpos*)
+* AJ reference plink binary from [GSE23636](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE23636)
 
+
+\* biallelic snps on autosomes with a MAF > 0.01, geno > 0.95 and hwe > 1e-6. Also, pallindromes and long LD regions were excluded. ([Processing steps](https://github.com/hirotaka-i/1kg_ref/blob/main/main.ipynb))
+
+## EUR
+clean-up the noisy variants, align to hg38, standardize the variants IDs to chr:pos:ref:alt
+```
+bash code/01_prepare_variants.sh \
+        --bfile /data/CARD/AD/REGARDS/Genetics/old_files/REGARDS_EUR_Genotyped \
+        --fa data/hg38.fa.gz \
+        --chain data/hg19ToHg38.over.chain.gz \
+        --chain-back data/hg38ToHg19.over.chain.gz \
+        --outdir temp/EUR/prep_vars_out \
+        --threads 2
+```
+sample QCs (call rate, sex, heterozygosity, relatives)
+```
+bash code/02_qc_samples.sh \
+        --pfile temp/EUR/prep_vars_out/hg38_prepped \
+        --outdir temp/EUR/qc_samples_out \
+        --threads 2
+```
+Population splitting (Map study samples to 1kg reference panel PC projection)
+```
+bash code/03_pca_with_ref_score.sh \
+        --study-pfile temp/EUR/qc_samples_out/final_keep \
+        --ref-bfile data/all_hg38_filtered_chrpos \
+        --fa data/hg38.fa.gz \
+        --drop-ambig yes \
+        --outdir temp/EUR/merge_ref_proj_out \
+        --threads 2
+python code/03b_plot_pop_and_split.py \
+        --pc-prefix temp/EUR/merge_ref_proj_out/study_vs_ref.combined \
+        --ref-label data/all_hg38_filtered_chrpos_pop.txt \
+        --ref-label-col Population \
+        --split-method mahalanobis \
+        --out-prefix temp/EUR/pop_split_out/with_1kg_mah
+```
+Output figures are in `temp/EUR/pop_split_out`
+![Whole population split](temp/EUR/pop_split_out/with_1kg_mah_Whole_group_PC1xPC2.png)
+
+
+
+## Try separating AJ
+
+### First merging AJ with 1kg
+```
+bash code/01_prepare_variants.sh \
+        --bfile data/GSE23636 \
+        --fa data/hg38.fa.gz \
+        --chain data/hg18ToHg38.over.chain.gz \
+        --outdir temp/AJ/prep_vars_out \
+        --threads 2
+```
+```
+bash code/02_qc_samples.sh \
+        --pfile temp/AJ/prep_vars_out/hg38_prepped \
+        --outdir temp/AJ/qc_samples_out \
+        --threads 2
+```
+```
+bash code/03_pca_with_ref_score.sh \
+        --study-pfile temp/AJ/qc_samples_out/final_keep \
+        --ref-bfile data/all_hg38_filtered_chrpos \
+        --fa data/hg38.fa.gz \
+        --drop-ambig yes \
+        --outdir temp/AJ/merge_ref_proj_out \
+        --threads 2
+python code/03b_plot_pop_and_split.py \
+        --pc-prefix temp/AJ/merge_ref_proj_out/study_vs_ref.combined \
+        --ref-label data/all_hg38_filtered_chrpos_pop.txt \
+        --ref-label-col Population \
+        --split-method mahalanobis \
+        --out-prefix temp/AJ/pop_split_out/with_1kg_mah
+```
+Output figures are in `temp/AJ/pop_split_out`
+![AJ population split in EUR](temp/AJ/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
+
+make a ref dataset for AJ/EUR+1kg/EUR
+```
+python code/make_aj_1kg_list.py
+./bin/plink2 --bfile temp/AJ/merge_ref_proj_out/merged_temp \
+        --keep temp/AJ/aj_1kg_eur.list \
+        --make-bed --threads 2 \
+        --out temp/AJ/ref_aj_eur
+```
+Combine with EUR samples and plot
+```
+bash code/03_pca_with_ref_score.sh \
+        --study-pfile temp/EUR/qc_samples_out/final_keep \
+        --keep-sample temp/EUR/pop_split_out/with_1kg_mah_EUR.list \
+        --ref-bfile temp/AJ/ref_aj_eur \
+        --fa data/hg38.fa.gz \
+        --maf 0.05 \
+        --drop-ambig yes \
+        --outdir temp/EUR/merge_refaj_proj_out \
+        --threads 2
+python code/03b_plot_pop_and_split.py \
+        --pc-prefix temp/EUR/merge_refaj_proj_out/study_vs_ref.combined \
+        --ref-label temp/AJ/aj_1kg_eur_label.list \
+        --ref-label-col label \
+        --split-method mahalanobis \
+        --eur-aj-sep \
+        --out-prefix temp/EUR/pop_split_eur_out/with_1kg_aj_mah
+```
+Output figures are in `temp/EUR/pop_split_eur_out`
+![EUR+AJ population split](temp/EUR/pop_split_eur_out/with_1kg_aj_mah_Whole_ancestry_PC1xPC2.png)
 ---
 
-### Step 2: Initialize and Set Up the New Repository
+* EUR list: `temp/EUR/pop_split_eur_out/with_1kg_mah_EUR.list`
+* EUR-nonAJ list: `temp/EUR/pop_split_eur_out/with_1kg_aj_mah_EUR-nonAJ.list`
 
-Once the template is set up, create a new repository on [GitHub](https://github.com) and copy the repository URL. Use the commands below to initialize the repository, link it to your new remote repository, and push the initial commit.
-
-```bash
-# Initialize a new Git repository
-git init 
-
-# Connect to your new remote repository (replace YOUR_GITHUB_REPO_URL with your repository URL)
-git remote add origin YOUR_GITHUB_REPO_URL 
-
-# Stage all files for the initial commit
-git add .
-
-# Commit the changes
-git commit -m "Initial commit"
-
-# Rename the default branch to 'main'
-git branch -M main
-
-# Push the changes to the remote repository
-git push -u origin main
-```
-
----
-### Note
-If this is the first time to push git to the remote repository, you will be asked to provide the username and password. 
-```
-git config --global user.name "Your Name"
-git config --global user.email "Your Email"
-```
----
-
-
-
-
-## Environment Setup
-
-For Python projects, the recommended way to manage the environment is by using Python’s built-in `venv` module. Follow the steps below to set up your environment, manage dependencies, and ensure consistency across development environments.
-
-### Step 1: Create a Virtual Environment
-
-Run the following commands inside your project folder:
-
-#### macOS/Linux:
-```bash
-# Create a virtual environment in the .venv directory
-python3 -m venv .venv # or "python -m venv .venv"
-
-# Activate the virtual environment
-source .venv/bin/activate 
-```
-
-#### Windows (PowerShell):
-```powershell
-# Create a virtual environment in the .venv directory
-python -m venv .venv 
-
-# Activate the virtual environment
-.venv\Scripts\Activate 
-```
-
-#### Package Installation:
-```
-# Upgrade pip
-python -m pip install --upgrade pip 
-
-# Install dependencies listed in requirements.txt
-python -m pip install -r requirements.txt 
-```
-
-> **Note**: `requirements.txt` is to to document dependencies for the project. This allows others to replicate your environment easily. Ensure `requirements.txt` includes all necessary packages for your project. Modify it as needed. (see the following section to update it)
----
-
-
-
-#### Additional notes:
-
-##### Install New Packages and Update Dependencies
-
-To add new packages to your environment and update the `requirements.txt` file:
-
-```bash
-pip install <package_name>   # Install a new package
-pip freeze > requirements.txt # Update dependencies in requirements.txt
-```
-
-##### Deactivate the Virtual Environment:
-When you're done working, deactivate the virtual environment with:
-
-```bash
-deactivate
-```
-
-##### Specify Python Version with `pyenv` (Optional)
-
-If you use `pyenv` to manage Python versions, you can specify a different Python version when creating the virtual environment. For example:
-
-```bash
-python3.12 -m venv .venv312
-```
-
-This ensures the environment is created using Python 3.9 (or another desired version).
-
-##### GitHub CLI (Optional)
-[GitHub CLI](https://cli.github.com/manual/gh_repo_create) can create a new GitHub repository directly from the terminal: 
-e.g. `gh repo create my-new-repo --public --source=. --remote=origin`
-
----
-
-## Folder Structure
-
-The recommended folder structure is as follows:
-
-```
-new_analysis
-├── README.md
-├── code                 # Code snippets and scripts
-│   ├── test.py
-│   ├── test.r
-│   ├── main.sh          # Shell script to run the main analysis
-├── data                 # Input data (gitignored)
-│   ├── testdata.csv
-├── priv                 # Private information (gitignored)
-│   ├── exports.sh       # Script to export environment variables
-│   ├── private.txt      # Sensitive information, e.g., API keys
-├── report               # Analysis outputs (figures, summaries)
-│   └── report.txt
-├── temp                 # Temporary files (gitignored)
-│   ├── temp1.txt
-├── requirements.txt
-└── .gitignore
-```
-
-Once the `venv` is created, a `.venv` folder will also be generated and should remain gitignored.
-
-## Security
-
-To safeguard sensitive information, the `data`, `priv`, and `temp` folders are gitignored by default:
-
-- The **`data`** folder is for input data.
-- The **`priv`** folder stores private information such as API keys and passwords.
-- The **`temp`** folder holds temporary files generated during analysis.
-
-**Note**: Ensure that sensitive information is never stored in the `report` folder or any other tracked location.
-
-
-# Larger project template with cookiecutter
-There is a very well organized tempplate for this: [cookiecutter data science](https://drivendata.github.io/cookiecutter-data-science/). They are well-thought of, and have many handy tricks inside and the documentation is helpful. From my perspective, the major differences are 
-
-1. **Extented environment setup**: Combined with the more comprehensive environmental management tools such as virtualenv, conda etc, the cookiecutter provides a more robust environment setup. They even provide the Makefile to manage the environment.
-2. **Ease of reusing the codes**: The module folder is structured so that the funtions could be installed as a package. You can use these functions in the `notebook` as you go. Also you can pip install these functions in a different project. (e.g. `pip install git+<github repo>`)
-3. **More organized**: The folder structure is more suitable for the larger development and collaborations. Documentations and detailed data subfolders are provided.
-
-
-
-## Install cookiecutter
-```
-pip install cookiecutter-data-science
-```
-## Create a new project
-In the parent folder, run the following command
-```
-ccdss
-```
-Then you will be asked to provide the project name, author, etc. and this will generate the project folder with the necessary files and folders.
-
-The default folder structure is well thought and organized. I highly recommend reading the [documentation](https://drivendata.github.io/cookiecutter-data-science/). Especially the landing part (Home) and the Opinions part of the documentation. These are very useful to understand the ideas for the robust data analysis.
-
-
-## Set up the python environment
-Having the same envirioment is important for the reproducibility of the analysis. The following is the command to set up the python environment according to the parameters you provided - the python version and the environment management tool
-```
-cd <project folder>
-make create_environment
-```
-
-## Install requirement packages
-
-```
-make requirements
-```
-The above will make sure the requirements will be installed in the environment you created. If you install a new package, make sure to update the requirements.txt file by running the following command. Your module will be installed in the environment as editable mode. 
-```
-pip install <package name> # install the package
-pip freeze > requirements.txt # update the file
-```
-
+# Preparation for Imputation server
+*Under construction*
+* Variants QC (+high call rate filtering) after population split
+* Run HRC-1000G-check-bim
+* split VCF by chromosome and bgzip + tabix
+--> Upload to Michigan Imputation server / TopMed Imputation server
