@@ -154,6 +154,7 @@ fi
 
 ./bin/plink2 --pfile "$OUTDIR/05_hg38_norm_aligned" \
        --set-all-var-ids 'chr@:#:$r:$a' \
+       --new-id-max-allele-len 999 truncate \
        --make-pgen --threads "$THREADS" --out "$OUTDIR/06_hg38_named"
 
 # 6) Final dup sweep with chosen policy
