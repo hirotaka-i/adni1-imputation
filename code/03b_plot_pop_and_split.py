@@ -159,7 +159,7 @@ make_and_save_population_figure(
     df=df,
     label_col='label_group',
     out_prefix=out_prefix,
-    title='Whole group',
+    title='Whole_group',
     x_pc='PC1',
     y_pc='PC2'
 )
@@ -168,7 +168,7 @@ make_and_save_population_figure(
     df=df,
     label_col='label',
     out_prefix=out_prefix,
-    title='Whole ancestry',
+    title='Whole_ancestry',
     x_pc='PC1',
     y_pc='PC2'
 )
