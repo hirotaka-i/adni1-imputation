@@ -197,9 +197,20 @@ N_HET=$(wc -l < "$OUTDIR/_remove_het_outlier.list" 2>/dev/null || echo 0)
 N_REL=$(wc -l < "$OUTDIR/_remove_related.list" 2>/dev/null || echo 0)
 N_REM=$(wc -l < "$OUTDIR/final_remove.list" 2>/dev/null || echo 0)
 
+awk -F'\t' '{
+  if (NF == 3) {
+    # FID IID reason
+    print $1, $2
+  } else if (NF == 2) {
+    # IID reason
+    print $1
+  }
+}' "$OUTDIR/final_remove.list" > "$OUTDIR/final_remove.id"
+
+
 # --------------------------------------------------------------------
 # 7) Produce FINAL NON-PRUNED QC dataset by removing final_remove from BASE_FULL
-if [[ -s "$OUTDIR/final_remove.list" ]]; then
+if [[ -s "$OUTDIR/final_remove.id" ]]; then
   ./bin/plink2 --pfile "$PFILE" --remove "$OUTDIR/final_remove.list" \
                --make-pgen --threads "$THREADS" --out "$OUTDIR/final_keep"
 else
