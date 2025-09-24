@@ -157,6 +157,21 @@ Output figures are in `temp/EUR/pop_split_eur_out`
 
 
 ---
+## AFR
+Start with REGARDS AFR genotyping data, and repeat the same steps as EUR.
+
+![Whole population split](temp/AFR/pop_split_out/with_1kg_mah_Whole_group_PC1xPC2.png)
+```
+InfPop
+AAC      8425
+REF      2573
+AMR       114
+AFR        84
+OTHER      11
+```
+![AAC population split](temp/AFR/pop_split_out/with_1kg_mah_AAC_PC1xPC2.png)
+![AMR population split](temp/AFR/pop_split_out/with_1kg_mah_AMR_PC1xPC2.png)
+![AFR population split](temp/AFR/pop_split_out/with_1kg_mah_AFR_PC1xPC2.png)
 
 # Preparation for Imputation server
 *Under construction*
