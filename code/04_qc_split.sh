@@ -27,6 +27,7 @@ GENO_THRES="0.02"
 MAF_THRES="0.01"
 THREADS=2
 VCF_OUT="no"
+VCF_CHR_PREFIX="chr"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     --geno-thres) GENO_THRES="$2"; shift 2 ;;
     --maf-thres) MAF_THRES="$2"; shift 2 ;;
     --vcf-out) VCF_OUT="$2"; shift 2 ;;
+    --vcf-chr-prefix) VCF_CHR_PREFIX="$2"; shift 2 ;;
     --threads) THREADS="$2"; shift 2 ;;
     -h|--help) sed -n '1,40p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
@@ -64,6 +66,7 @@ echo "[INFO] HWE command: $HWE_COMMAND"
 echo "[INFO] Geno threshold: $GENO_THRES"
 echo "[INFO] MAF threshold: $MAF_THRES"
 echo "[INFO] Threads: $THREADS"
+echo "[INFO] VCF CHR prefix: $VCF_CHR_PREFIX"
 
 # Step 1: Subset samples
 ./bin/plink2 --pfile "$PFILE" --keep "$KEEPSAMPLES" \
@@ -73,7 +76,7 @@ INPFX="$OUTDIR/kept"
 
 # Step 2: SNPs-only filter
 if [[ "$SNPS_ONLY" == "yes" ]]; then
-  ./bin/plink2 --pfile "$INPFX" --snps-only just-acgt \
+  ./bin/plink2 --pfile "$INPFX" --snps-only just-acgt --max-alleles 2 \
     --make-pgen --threads "$THREADS" --out "${INPFX}_snps"
   INPFX="${INPFX}_snps"
 fi
@@ -95,16 +98,17 @@ fi
 
 # Step 4: HWE
 if [[ -n "$HWE_COMMAND" ]]; then
-    ./bin/plink2 --pfile "$INPFX" --hwe "$HWE_COMMAND" --mac 20\
+  ./bin/plink2 --pfile "$INPFX" --hwe $HWE_COMMAND --mac 20 --threads "$THREADS" \
     --write-snplist --out "${INPFX}_keep_hwe"
-    ./bin/plink2 --pfile "$INPFX" --extract "${INPFX}_keep_hwe.snplist" \
+
+  ./bin/plink2 --pfile "$INPFX" --extract "${INPFX}_keep_hwe.snplist" \
     --make-pgen --threads "$THREADS" --out "${INPFX}_hwe"
-    INPFX="${INPFX}_hwe"
+  INPFX="${INPFX}_hwe"
 fi
 
 # Step 5: Variant QC filters + sample QC with good variants
 PLINK_ARGS=(--pfile "$INPFX" --make-pgen --mind 0.02 --sort-vars --threads "$THREADS" --out "${INPFX}_qc")
-[[ -n "$FA" ]] && PLINK_ARGS+=(--fa "$FA" ref-from-fa force)
+[[ -n "$FA" ]] && PLINK_ARGS+=(--ref-from-fa force --fa "$FA")
 [[ -n "$GENO_THRES" ]] && PLINK_ARGS+=(--geno "$GENO_THRES")
 [[ -n "$MAF_THRES" ]] && PLINK_ARGS+=(--maf "$MAF_THRES")
 
@@ -123,12 +127,11 @@ if [[ "$VCF_OUT" == "yes" ]]; then
   CHRS=$(awk 'NR>1 && $1 !~ /^#/ {c=$1; sub(/^chr/,"",c); print c}' "${INPFX}_qc.pvar" | sort -u)
   echo "[INFO] Exporting chromosomes: $CHRS"
   for c in $CHRS; do
-    ./bin/plink2 --pfile "${INPFX}_qc_renamed" --chr "$c" --recode vcf bgz \
+    ./bin/plink2 --pfile "${INPFX}_qc_renamed" --chr "$c" --output-chr chrM --recode vcf bgz \
       --out "${OUTDIR}/vcf/chr${c}"
   done
   awk 'NR>1{print $1,$2}' OFS='\t' "${INPFX}_qc_renamed.psam" > "${OUTDIR}/vcf/sample_info.list"
 fi
-
 
 
 echo -e "\n==> DONE. QC outputs in $OUTDIR/*_qc/"

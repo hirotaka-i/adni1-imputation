@@ -1,14 +1,13 @@
-# REGARDS genetic QC and population splitting
+# ADNI1 genetic QC and population splitting
 
-Install plink2 to ./bin folder `PLINK v2.0.0-a.7LM 64-bit Intel (1 Sep 2025)`
+Install plink2 to ./bin folder `
 ```
+mkdir -p ./bin
 wget -O ./bin/plink2.zip https://s3.amazonaws.com/plink2-assets/plink2_linux_x86_64_latest.zip && unzip -o ./bin/plink2.zip -d ./bin && chmod +x ./bin/plink2
 ```
 Download chain file for liftOver
 ```
-wget -O data/hg19ToHg38.over.chain.gz http://hgdownload.cse.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
-wget -O data/hg18ToHg38.over.chain.gz http://hgdownload.cse.edu/goldenPath/hg18/liftOver/hg18ToHg38.over.chain.gz
-wget -O data/hg38ToHg19.over.chain.gz http://hgdownload.cse.edu/goldenPath/hg38/liftOver/hg38ToHg19.over.chain.gz
+wget -O data/hg18ToHg38.over.chain.gz http://hgdownload.soe.ucsc.edu/goldenpath/hg18/liftOver/hg18ToHg38.over.chain.gz
 ````
 Install modules to run the following scripts on cluster
 ```
@@ -21,161 +20,81 @@ module load plink/1.9
 * 1000 genome phase 3 plink binary + population labels filtered to biallelic snps on autosomes with a MAF > 0.01, geno > 0.95 and hwe > 1e-6. Also, pallindromes and long LD regions were excluded. ([Processing steps](https://github.com/hirotaka-i/1kg_ref/blob/main/main.ipynb))
 
 ## EUR
-Start with REGARDS EUR genotyping data.    
-
-First, clean-up the noisy variants, align to hg38, standardize the variants IDs to chr:pos:ref:alt
+Start with removing the noisy variants from the original ADNI1 hg18 data. 
+Then, align to hg38, standardize the variants IDs to chr:pos:ref:alt
 ```
+awk '$5 == "0" || $6 == "0" || $5 == $6 {print $2}' \
+  ../resources/ADNI/ADNI1_hg19/ADNI_cluster_01_forward_757LONI.bim \
+  > temp/bad_snps.txt
+
+./bin/plink2 \
+  --bfile ../resources/ADNI/ADNI1_hg19/ADNI_cluster_01_forward_757LONI \
+  --exclude temp/bad_snps.txt \
+  --make-bed \
+  --out temp/ADNI_start
+
 bash code/01_prepare_variants.sh \
-        --bfile /data/CARD/AD/REGARDS/Genetics/old_files/REGARDS_EUR_Genotyped \
-        --fa data/hg38.fa.gz \
-        --chain data/hg19ToHg38.over.chain.gz \
-        --chain-back data/hg38ToHg19.over.chain.gz \
-        --outdir temp/EUR/prep_vars_out \
+        --bfile temp/ADNI_start \
+        --fa ../resources/liftover_ref/hg38.fa.gz \
+        --chain data/hg18ToHg38.over.chain.gz \
+        --outdir temp/prep_vars_out \
         --threads 2
 ```
 sample QCs (call rate, sex, heterozygosity, relatives)
 ```
 bash code/02_qc_samples.sh \
-        --pfile temp/EUR/prep_vars_out/hg38_prepped \
-        --outdir temp/EUR/qc_samples_out \
+        --pfile temp/prep_vars_out/hg38_prepped \
+        --outdir temp/qc_samples_out \
         --threads 2
 ```
 Population splitting (Map study samples to 1kg reference panel PC projection)
 ```
 bash code/03_pca_with_ref_score.sh \
-        --study-pfile temp/EUR/qc_samples_out/final_keep \
-        --ref-bfile data/all_hg38_filtered_chrpos \
-        --fa data/hg38.fa.gz \
+        --study-pfile temp/qc_samples_out/final_keep \
+        --ref-bfile ../resources/1kg_p3/all_hg38_filtered_chrpos \
+        --fa ../resources/liftover_ref/hg38.fa.gz \
         --drop-ambig yes \
-        --outdir temp/EUR/merge_ref_proj_out \
+        --outdir temp/merge_ref_proj_out \
         --threads 2
 python code/03b_plot_pop_and_split.py \
-        --pc-prefix temp/EUR/merge_ref_proj_out/study_vs_ref.combined \
-        --ref-label data/all_hg38_filtered_chrpos_pop.txt \
+        --pc-prefix temp/merge_ref_proj_out/study_vs_ref.combined \
+        --ref-label ../resources/1kg_p3/all_hg38_filtered_chrpos_pop.txt \
         --ref-label-col Population \
         --split-method mahalanobis \
-        --out-prefix temp/EUR/pop_split_out/with_1kg_mah
+        --out-prefix temp/pop_split_out/with_1kg_mah
 ```
 ```
 InfPop
 REF      2573
-EUR      1616
-AMR        68
-OTHER      11
+EUR       621
+AAC        30
+AMR        21
+OTHER       9
+SAS         1
 ```
 
-Output figures are in `temp/EUR/pop_split_out`
-![Whole population split](temp/EUR/pop_split_out/with_1kg_mah_Whole_group_PC1xPC2.png)
-![EUR population split](temp/EUR/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
+Output figures are in `temp/pop_split_out`
+![Whole population split](temp/pop_split_out/with_1kg_mah_Whole_group_PC1xPC2.png)
+![EUR population split](temp/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
 
+# Separate EUR and prep for imputation
+```
+bash code/04_qc_split.sh \
+  --pfile temp/prep_vars_out/hg38_prepped \
+  --keep-samples temp/pop_split_out/with_1kg_mah_EUR.list \
+  --fa ../resources/liftover_ref/hg38.fa.gz \
+  --snps-only yes \
+  --vcf-out yes \
+  --outdir temp/qc_EUR_splitted \
+  --geno-thres 0.1 \
+  --maf-thres 0.005 \
+  --vcf-out yes \
+  --threads 2
+```
 
-## Try separating AJ
-GP2 style requires AJ separation from EUR. 
-### First, merging AJ with 1kg
+Archive the temp/qc_EUR_splitted/vcf/chr*.vcf.gz output files for download
 ```
-bash code/01_prepare_variants.sh \
-        --bfile data/GSE23636 \
-        --fa data/hg38.fa.gz \
-        --chain data/hg18ToHg38.over.chain.gz \
-        --outdir temp/AJ/prep_vars_out \
-        --threads 2
+cd temp/qc_EUR_splitted/vcf && tar -czvf ../preimpute_vcf.tar.gz chr*.vcf.gz 
 ```
-```
-bash code/02_qc_samples.sh \
-        --pfile temp/AJ/prep_vars_out/hg38_prepped \
-        --outdir temp/AJ/qc_samples_out \
-        --threads 2
-```
-```
-bash code/03_pca_with_ref_score.sh \
-        --study-pfile temp/AJ/qc_samples_out/final_keep \
-        --ref-bfile data/all_hg38_filtered_chrpos \
-        --fa data/hg38.fa.gz \
-        --drop-ambig yes \
-        --outdir temp/AJ/merge_ref_proj_out \
-        --threads 2
-python code/03b_plot_pop_and_split.py \
-        --pc-prefix temp/AJ/merge_ref_proj_out/study_vs_ref.combined \
-        --ref-label data/all_hg38_filtered_chrpos_pop.txt \
-        --ref-label-col Population \
-        --split-method mahalanobis \
-        --out-prefix temp/AJ/pop_split_out/with_1kg_mah
-```
-```
-InfPop
-REF      2573
-EUR       352
-AMR        79
-OTHER      32
-```
-Some AJ participants were not-mapped to EUA cluster when merged with 1kg.
 
-Output figures are in `temp/AJ/pop_split_out`
-![AJ population split in EUR](temp/AJ/pop_split_out/with_1kg_mah_EUR_PC1xPC2.png)
-
-
-make a ref dataset for AJ/EUR+1kg/EUR
-```
-python code/make_aj_1kg_list.py
-
-./bin/plink2 --bfile temp/AJ/merge_ref_proj_out/merged_temp \
-        --keep temp/AJ/aj_1kg_eur.list \
-        --make-bed --threads 2 \
-        --out temp/AJ/ref_aj_eur
-```
-Combine with EUR samples and plot
-```
-bash code/03_pca_with_ref_score.sh \
-        --study-pfile temp/EUR/qc_samples_out/final_keep \
-        --keep-sample temp/EUR/pop_split_out/with_1kg_mah_EUR.list \
-        --ref-bfile temp/AJ/ref_aj_eur \
-        --fa data/hg38.fa.gz \
-        --maf 0.05 \
-        --drop-ambig yes \
-        --outdir temp/EUR/merge_refaj_proj_out \
-        --threads 2
-python code/03b_plot_pop_and_split.py \
-        --pc-prefix temp/EUR/merge_refaj_proj_out/study_vs_ref.combined \
-        --ref-label temp/AJ/aj_1kg_eur_label.list \
-        --ref-label-col label \
-        --split-method mahalanobis \
-        --eur-aj-sep \
-        --out-prefix temp/EUR/pop_split_eur_out/with_1kg_aj_mah
-```
-```
-InfPop
-EUR-nonAJ    1592
-REF           877
-EUR-AJ         24
-```
-Output figures are in `temp/EUR/pop_split_eur_out`
-![EUR+AJ population split](temp/EUR/pop_split_eur_out/with_1kg_aj_mah_Whole_ancestry_PC1xPC2.png)
-
-==== NOT ON GITHUB ====
-* EUR list: `temp/EUR/pop_split_eur_out/with_1kg_mah_EUR.list`
-* EUR-nonAJ list: `temp/EUR/pop_split_eur_out/with_1kg_aj_mah_EUR-nonAJ.list`
-
-
----
-## AFR
-Start with REGARDS AFR genotyping data, and repeat the same steps as EUR.
-
-![Whole population split](temp/AFR/pop_split_out/with_1kg_mah_Whole_group_PC1xPC2.png)
-```
-InfPop
-AAC      8425
-REF      2573
-AMR       114
-AFR        84
-OTHER      11
-```
-![AAC population split](temp/AFR/pop_split_out/with_1kg_mah_AAC_PC1xPC2.png)
-![AMR population split](temp/AFR/pop_split_out/with_1kg_mah_AMR_PC1xPC2.png)
-![AFR population split](temp/AFR/pop_split_out/with_1kg_mah_AFR_PC1xPC2.png)
-
-# Preparation for Imputation server
-*Under construction*
-* Variants QC (+high call rate filtering) after population split
-* Run HRC-1000G-check-bim
-* split VCF by chromosome and bgzip + tabix
---> Upload to Michigan Imputation server / TopMed Imputation server
+--> Michigan Imputation server upload with reference panel: 1000 Genomes Phase 3 v5 (GRCh38/hg38) x30
