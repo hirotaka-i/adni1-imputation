@@ -80,8 +80,9 @@ if [[ -n "$VKEEP" ]]; then
   INPFX="$OUTDIR/01c_varfilt"
 fi
 
-# 3) Lenient per-variant missingness (keeps indels)
+# 3) Lenient per-variant missingness (only biallelic snps retained)
 ./bin/plink2 --pfile "$INPFX" --geno "$GENO_PRE" \
+       --snps-only just-acgt --max-alleles 2 \
        --make-pgen --threads "$THREADS" --out "$OUTDIR/02_lenient"
 
 # 4) Optional liftover via UCSC liftOver (BED: 0-based; use full REF span)
@@ -134,24 +135,40 @@ if [[ -n "$CHAIN" ]]; then
 
   cut -f4 "$BED" > "$OUTDIR/03_keep.ids"
   awk '{print $4, $2+1}' OFS='\t' "$BED" > "$OUTDIR/03_update.pos"
+  # Create chr update map: variantID -> newChr (keep chr prefix from liftOver output)
   awk '{print $4, $1}' OFS='\t' "$BED" > "$OUTDIR/03_update.chr"
 
   ./bin/plink2 --pfile "$OUTDIR/03_tmp_named" \
          --extract "$OUTDIR/03_keep.ids" \
          --update-map "$OUTDIR/03_update.pos" \
-         --update-chr "$OUTDIR/03_update.chr" \
+         --update-chr "$OUTDIR/03_update.chr" 2 1 \
          --sort-vars \
          --make-pgen --threads "$THREADS" --out "$OUTDIR/04_hg38"
 
   LIFTEDPFX="$OUTDIR/04_hg38"
+else
+  # No liftover: add chr prefix directly since data likely doesn't have it
+  echo "[INFO] No liftover - adding 'chr' prefix to match FASTA reference"
+  awk 'NR==1 {print; next} {print $1, "chr"$1}' "$LIFTEDPFX.pvar" > "$OUTDIR/04_chr_update.txt"
+  ./bin/plink2 --pfile "$LIFTEDPFX" \
+         --update-chr "$OUTDIR/04_chr_update.txt" \
+         --sort-vars \
+         --make-pgen --threads "$THREADS" --out "$OUTDIR/04_hg38"
+  LIFTEDPFX="$OUTDIR/04_hg38"
 fi
 
-# 5) Normalize vs hg38 FASTA, align REF/ALT, dedup (policy), standardize IDs
+# At this point, LIFTEDPFX should have chr-prefixed chromosomes matching the FASTA
+
+# 5) Normalize vs hg38 FASTA, align REF/ALT, dedup (policy)
+# NOTE: ref-from-fa only aligns to FASTA, NOT to imputation panel strand
+# Use HRC-1000G checking (script 05) after this for proper panel alignment
+echo "[INFO] Normalizing against FASTA reference (chr-prefixed chromosomes)"
 ./bin/plink2 --pfile "$LIFTEDPFX" --fa "$FA" \
        --normalize --ref-from-fa force \
        --rm-dup "$DUP_POLICY" --sort-vars \
        --make-pgen --threads "$THREADS" --out "$OUTDIR/05_hg38_norm_aligned"
 
+# 6) Set variant IDs
 ./bin/plink2 --pfile "$OUTDIR/05_hg38_norm_aligned" \
        --set-all-var-ids 'chr@:#:$r:$a' \
        --new-id-max-allele-len 999 truncate \
