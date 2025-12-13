@@ -169,4 +169,4 @@ gzip temp/strand_align/strand_check_run/kept_snps_qc-updated-chr*.vcf
 tar -czvf temp/preimpute_vcf.tar.gz temp/strand_align/strand_check_run/kept_snps_qc-updated-chr*.vcf.gz
 ```
 
---> Michigan Imputation server upload with reference panel: 1000 Genomes Phase 3 v5 (GRCh38/hg38) x30
+--> TOPMed Imputation server.
