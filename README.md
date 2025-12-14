@@ -163,10 +163,21 @@ perl ../resources/strand_check/HRC-1000G-check-bim.pl \
 
 bash temp/strand_align/strand_check_run/Run-plink.sh 
 ```
-# Compress VCFs and tar.gz them for upload
+# Compress hg38 VCFs with "chr" prefix for chromosome and tar.gz them for upload
 ```
-gzip temp/strand_align/strand_check_run/kept_snps_qc-updated-chr*.vcf
-tar -czvf temp/preimpute_vcf.tar.gz temp/strand_align/strand_check_run/kept_snps_qc-updated-chr*.vcf.gz
+cd temp/strand_align/strand_check_run
+
+for chr in {1..22}; do
+  awk '
+    BEGIN {OFS="\t"}
+    /^#/ {print; next}
+    $1 == "'"$chr"'" {$1="chr"$1}
+    {print}
+  ' kept_snps_qc-updated-chr${chr}.vcf \
+  | bgzip -c > chr${chr}_preimpute.vcf.gz
+done
+
+tar -czvf preimpute_vcfs.tar.gz ./chr*_preimpute.vcf.gz
 ```
 
 --> TOPMed Imputation server.
