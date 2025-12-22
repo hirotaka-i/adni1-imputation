@@ -181,3 +181,66 @@ tar -czvf preimpute_vcfs.tar.gz ./chr*_preimpute.vcf.gz
 ```
 
 --> TOPMed Imputation server.
+
+
+## Post-imputation QC
+
+```
+for chr in {1..22}; do
+  echo "Processing chr${chr}..."
+
+  ./bin/plink2 \
+    --vcf temp/imputed/chr${chr}.dose.vcf.gz dosage=DS \
+    --var-filter \
+    --extract-if-info 'R2 > 0.8' \
+    --maf 0.005 \
+    --make-pgen \
+    --threads 2 \
+    --out temp/imputed_qc/chr${chr}.topmed.r2_0p8.maf_0p005
+
+done
+```
+
+```
+for chr in {1..22}; do
+  echo "=== chr${chr} ==="
+
+  PREFIX=temp/imputed_qc/chr${chr}.topmed.r2_0p8.maf_0p005
+  OUT=temp/imputed_qc/bed_clean/chr${chr}.clean
+
+  awk 'BEGIN{OFS="\t"} $0 !~ /^#/ && $3=="." {print $1, $2-1, $2}' \
+    ${PREFIX}.pvar > ${OUT}.missingid.bed
+
+  ./bin/plink2 \
+    --pfile ${PREFIX} \
+    --exclude bed0 ${OUT}.missingid.bed \
+    --rm-dup exclude-all \
+    --geno 0.1 \
+    --make-bed \
+    --threads 2 \
+    --out ${OUT}
+done
+```
+
+```
+MERGEDIR=temp/imputed_qc/bed_clean
+OUT=temp/imputed_qc/topmed.r2_0p8.maf_0p005.geno0p1.rmdup.allchr
+
+# 1) Build merge list (prefixes, no .bed)
+ls ${MERGEDIR}/chr*.clean.bed \
+  | sed 's/\.bed$//' \
+  | sort -V \
+  > ${MERGEDIR}/merge_list.txt
+
+# 2) Merge: first file is the base, the rest are in --merge-list
+BASE=$(head -n 1 ${MERGEDIR}/merge_list.txt)
+tail -n +2 ${MERGEDIR}/merge_list.txt > ${MERGEDIR}/merge_list.rest.txt
+
+plink \
+  --bfile ${BASE} \
+  --merge-list ${MERGEDIR}/merge_list.rest.txt \
+  --keep-allele-order \
+  --make-bed \
+  --threads 2 \
+  --out ${OUT}
+```
